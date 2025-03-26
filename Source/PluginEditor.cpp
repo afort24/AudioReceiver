@@ -2,6 +2,7 @@
 #include "PluginEditor.h"
 
 //==============================================================================
+
 AudioReceiverAudioProcessorEditor::AudioReceiverAudioProcessorEditor (AudioReceiverAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {

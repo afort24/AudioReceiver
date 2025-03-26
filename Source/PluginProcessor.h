@@ -5,7 +5,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#include "SharedMemoryManager.h"
+#include "/Users/alexanderfortunato/Development/JUCE/AudioSender/Source/SharedMemoryManager.h"
 
 class AudioReceiverAudioProcessor  : public juce::AudioProcessor
 {
