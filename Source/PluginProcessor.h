@@ -1,13 +1,14 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "SharedMemoryManager.h"
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <unistd.h>
 
-#include "/Users/alexanderfortunato/Development/JUCE/AudioSender/Source/SharedMemoryManager.h"
 
-class AudioReceiverAudioProcessor  : public juce::AudioProcessor
+
+class AudioReceiverAudioProcessor  : public juce::AudioProcessor, public SharedMemoryManager
 {
 public:
     //==============================================================================
@@ -46,16 +47,46 @@ public:
     //==============================================================================
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
+    
+    //New:
+    bool isMemoryInitializedAndActive() const
+    {
+        return isMemoryInitialized && sharedData != nullptr && sharedData->isActive.load();
+    }
+    
+    bool isConnectionActive() const
+       {
+           return isMemoryInitialized && sharedData != nullptr && sharedData->isActive.load();
+       }
+    
+    double getCurrentLatency() const
+        {
+            return isMemoryInitialized && sharedData != nullptr ?
+                   sharedData->metrics.currentLatency.load() : 0.0;
+        }
+    
+    //New:
+    bool attemptReconnection();  // For subsequent reconnection attempts
 
 private:
     
-//    static constexpr const char* SHARED_MEMORY_NAME = "/my_shared_audio_buffer";
-//    static constexpr size_t BUFFER_SIZE = 48000 * 2 * sizeof(float); // 1 second of stereo audio at 48kHz
-//
-//    int shm_fd;
-//    float* audioBuffer;
-    
+
     uint64_t lastReadIndex = 0;
 
+    // Timer for reconnection attempts
+    class ReconnectionTimer : public juce::Timer
+        {
+        public:
+            ReconnectionTimer(AudioReceiverAudioProcessor& processor) : owner(processor) {}
+            void timerCallback() override { owner.attemptReconnection(); }
+        private:
+            AudioReceiverAudioProcessor& owner;
+        };
+        
+    bool initializeConnection(); // First-time initialization
+    bool connectToSharedMemory(); // Common connection logic
+    
+    std::unique_ptr<ReconnectionTimer> reconnectionTimer;
+    
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AudioReceiverAudioProcessor)
 };

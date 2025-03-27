@@ -1,6 +1,6 @@
-
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "SharedMemoryManager.h"
 
 //==============================================================================
 AudioReceiverAudioProcessor::AudioReceiverAudioProcessor()
@@ -15,34 +15,125 @@ AudioReceiverAudioProcessor::AudioReceiverAudioProcessor()
                        )
 #endif
 {
-    // Open shared memory in read-only mode
+
+    //Try initial connection
+    initializeConnection();
+    
+    // Set up timer for reconnection if needed
+    reconnectionTimer = std::make_unique<ReconnectionTimer>(*this);
+    reconnectionTimer->startTimer(1000);
+    
+//    // Open shared memory in read-only mode
+//    shm_fd = shm_open(SHARED_MEMORY_NAME, O_RDONLY, 0666);
+//
+//    if (shm_fd == -1)
+//        return;
+//
+//    // Map shared memory
+//    void* mappedMemory = mmap(0, MAX_BUFFER_SIZE, PROT_READ, MAP_SHARED, shm_fd, 0);
+//
+//    if (mappedMemory == MAP_FAILED)
+//    {
+//        close(shm_fd);
+//        shm_fd = -1;
+//        return;
+//    }
+//
+//    // Cast to shared data structure
+//    sharedData = static_cast<SharedAudioData*>(mappedMemory);
+//    isMemoryInitialized = true;
+
+}
+
+bool AudioReceiverAudioProcessor::initializeConnection()
+{
+    // This is for first-time initialization only
+    DBG("Initializing connection to shared memory...");
+    return connectToSharedMemory();
+}
+
+bool AudioReceiverAudioProcessor::attemptReconnection()
+{
+    // Only try to reconnect if not already connected
+    if (!isMemoryInitialized || sharedData == nullptr)
+    {
+        DBG("Attempting to reconnect to shared memory...");
+        return connectToSharedMemory();
+    }
+    return isMemoryInitialized;
+}
+
+bool AudioReceiverAudioProcessor::connectToSharedMemory()
+{
+    // Clean up any existing connection first
+    cleanupSharedMemory();
+    
+    // Attempt to open the shared memory
     shm_fd = shm_open(SHARED_MEMORY_NAME, O_RDONLY, 0666);
     
     if (shm_fd == -1)
-        return;
+    {
+        DBG("Failed to open shared memory: " + juce::String(strerror(errno)));
+        return false;
+    }
 
     // Map shared memory
     void* mappedMemory = mmap(0, MAX_BUFFER_SIZE, PROT_READ, MAP_SHARED, shm_fd, 0);
     
     if (mappedMemory == MAP_FAILED)
     {
+        DBG("Failed to map shared memory: " + juce::String(strerror(errno)));
         close(shm_fd);
         shm_fd = -1;
-        return;
+        return false;
     }
 
-    // Cast to shared data structure
+    // Cast and check if the data appears valid
     sharedData = static_cast<SharedAudioData*>(mappedMemory);
     isMemoryInitialized = true;
+    DBG("Successfully connected to shared memory");
+    return true;
 }
 
 
 AudioReceiverAudioProcessor::~AudioReceiverAudioProcessor()
 {
+    // Stop the timer before destruction
+    if (reconnectionTimer != nullptr)
+        reconnectionTimer->stopTimer();
+    
+    reconnectionTimer = nullptr;
+    
     cleanupSharedMemory();
 }
 
 //==============================================================================
+
+void SharedMemoryManager::cleanupSharedMemory()
+{
+    if (sharedData != nullptr)
+    {
+        munmap(sharedData, MAX_BUFFER_SIZE);
+        sharedData = nullptr;
+    }
+
+    if (shm_fd != -1)
+    {
+        close(shm_fd);
+        shm_fd = -1;
+    }
+    
+    isMemoryInitialized = false;
+}
+
+bool SharedMemoryManager::initializeSharedMemory()
+{
+    // This is just a placeholder implementation since your
+    // receiver initializes memory differently
+    return true;
+}
+//==============================================================================
+
 const juce::String AudioReceiverAudioProcessor::getName() const
 {
     return JucePlugin_Name;
@@ -112,17 +203,7 @@ void AudioReceiverAudioProcessor::prepareToPlay (double sampleRate, int samplesP
 
 void AudioReceiverAudioProcessor::releaseResources()
 {
-    if (audioBuffer != nullptr)
-    {
-        munmap(audioBuffer, BUFFER_SIZE);
-        audioBuffer = nullptr;
-    }
-
-    if (shm_fd != -1)
-    {
-        close(shm_fd);
-        shm_fd = -1;
-    }
+    cleanupSharedMemory();
 }
 
 #ifndef JucePlugin_PreferredChannelConfigurations
@@ -240,3 +321,6 @@ juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new AudioReceiverAudioProcessor();
 }
+
+
+

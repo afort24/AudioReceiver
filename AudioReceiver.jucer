@@ -2,11 +2,13 @@
 
 <JUCERPROJECT id="hEFTdz" name="AudioReceiver" projectType="audioplug" useAppConfig="0"
               addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" companyName="Alex Fortunato Music"
-              companyWebsite="alexfortunatomusic.com">
+              companyWebsite="alexfortunatomusic.com" headerPath="/Users/alexanderfortunato/Development/JUCE/Shared Headers&#10;">
   <MAINGROUP id="IBhxS1" name="AudioReceiver">
+    <GROUP id="{CF45DFAD-5949-44F0-4D85-24E70B2E1B3F}" name="Shared Headers">
+      <FILE id="Or8ldj" name="SharedMemoryManager.h" compile="0" resource="0"
+            file="../Shared Headers/SharedMemoryManager.h"/>
+    </GROUP>
     <GROUP id="{AC3155A3-50E1-C01E-43BB-1EE687B05FC4}" name="Source">
-      <FILE id="w0V1cW" name="SharedMemoryManager.h" compile="0" resource="0"
-            file="../AudioSender/Source/SharedMemoryManager.h"/>
       <FILE id="mExKHS" name="PluginProcessor.cpp" compile="1" resource="0"
             file="Source/PluginProcessor.cpp"/>
       <FILE id="TTXq1V" name="PluginProcessor.h" compile="0" resource="0"
