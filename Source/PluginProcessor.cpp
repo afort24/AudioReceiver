@@ -15,6 +15,8 @@ AudioReceiverAudioProcessor::AudioReceiverAudioProcessor()
                        )
 #endif
 {
+    // Initialize flag to false
+    canWriteToSharedMemory = false;
 
     //Try initial connection
     //initializeConnection();
@@ -24,26 +26,6 @@ AudioReceiverAudioProcessor::AudioReceiverAudioProcessor()
     reconnectionTimer = std::make_unique<ReconnectionTimer>(*this);
     reconnectionTimer->startTimer(1000);
     
-//    // Open shared memory in read-only mode
-//    shm_fd = shm_open(SHARED_MEMORY_NAME, O_RDONLY, 0666);
-//
-//    if (shm_fd == -1)
-//        return;
-//
-//    // Map shared memory
-//    void* mappedMemory = mmap(0, MAX_BUFFER_SIZE, PROT_READ, MAP_SHARED, shm_fd, 0);
-//
-//    if (mappedMemory == MAP_FAILED)
-//    {
-//        close(shm_fd);
-//        shm_fd = -1;
-//        return;
-//    }
-//
-//    // Cast to shared data structure
-//    sharedData = static_cast<SharedAudioData*>(mappedMemory);
-//    isMemoryInitialized = true;
-
 }
 
 bool AudioReceiverAudioProcessor::initializeConnection()
@@ -64,37 +46,72 @@ bool AudioReceiverAudioProcessor::attemptReconnection()
     return isMemoryInitialized;
 }
 
+//connectToSharedMemory will first try to open the shared memory with read-write permission. If that fails, it falls back to read-only mode. It sets the canWriteToSharedMemory flag appropriately.
 bool AudioReceiverAudioProcessor::connectToSharedMemory()
 {
     // Clean up any existing connection first
     cleanupSharedMemory();
     
-    // Attempt to open the shared memory
-    shm_fd = shm_open(SHARED_MEMORY_NAME, O_RDONLY, 0666);
+    // First attempt to open the shared memory with read-write access
+    shm_fd = shm_open(SHARED_MEMORY_NAME, O_RDWR, 0666);
     
     if (shm_fd == -1)
     {
-        DBG("Failed to open shared memory: " + juce::String(strerror(errno)));
-        return false;
+        DBG("Failed to open shared memory with read-write access: " + juce::String(strerror(errno)));
+        
+        // Try again with read-only as fallback
+        shm_fd = shm_open(SHARED_MEMORY_NAME, O_RDONLY, 0666);
+        
+        if (shm_fd == -1)
+        {
+            DBG("Failed to open shared memory: " + juce::String(strerror(errno)));
+            return false;
+        }
+        
+        // If we get here, we opened in read-only mode
+        void* mappedMemory = mmap(0, MAX_BUFFER_SIZE, PROT_READ, MAP_SHARED, shm_fd, 0);
+        
+        if (mappedMemory == MAP_FAILED)
+        {
+            DBG("Failed to map shared memory: " + juce::String(strerror(errno)));
+            sharedData = nullptr;
+            close(shm_fd);
+            shm_fd = -1;
+            return false;
+        }
+        
+        // Mark that we're in read-only mode
+        canWriteToSharedMemory = false;
+        DBG("Connected to shared memory in READ-ONLY mode");
+        
+        // Cast and check if the data appears valid
+        sharedData = static_cast<SharedAudioData*>(mappedMemory);
+        isMemoryInitialized = true;
+        return true;
     }
-
-    // Map shared memory
-    void* mappedMemory = mmap(0, MAX_BUFFER_SIZE, PROT_READ, MAP_SHARED, shm_fd, 0);
-    
-    if (mappedMemory == MAP_FAILED)
+    else
     {
-        DBG("Failed to map shared memory: " + juce::String(strerror(errno)));
-        sharedData = nullptr;
-        close(shm_fd);
-        shm_fd = -1;
-        return false;
+        // We opened in read-write mode successfully
+        void* mappedMemory = mmap(0, MAX_BUFFER_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+        
+        if (mappedMemory == MAP_FAILED)
+        {
+            DBG("Failed to map shared memory with read-write permissions: " + juce::String(strerror(errno)));
+            sharedData = nullptr;
+            close(shm_fd);
+            shm_fd = -1;
+            return false;
+        }
+        
+        // Mark that we can write to the shared memory
+        canWriteToSharedMemory = true;
+        DBG("Connected to shared memory in READ-WRITE mode");
+        
+        // Cast and check if the data appears valid
+        sharedData = static_cast<SharedAudioData*>(mappedMemory);
+        isMemoryInitialized = true;
+        return true;
     }
-
-    // Cast and check if the data appears valid
-    sharedData = static_cast<SharedAudioData*>(mappedMemory);
-    isMemoryInitialized = true;
-    DBG("Successfully connected to shared memory");
-    return true;
 }
 
 
@@ -238,6 +255,8 @@ bool AudioReceiverAudioProcessor::isBusesLayoutSupported (const BusesLayout& lay
 }
 #endif
 
+
+//The key changes here are the addition of the if (canWriteToSharedMemory && sharedData != nullptr) checks before any attempt to write to the shared memory.
 void AudioReceiverAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
@@ -276,22 +295,37 @@ void AudioReceiverAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
             }
         }
         
-        // Update read position
+        // Update local read position
         lastReadIndex = readIndex + numSamples;
-        sharedData->readIndex.store(lastReadIndex, std::memory_order_release);
+        
+        // Only try to write to shared memory if we have permission
+        if (canWriteToSharedMemory && sharedData != nullptr)
+        {
+            sharedData->readIndex.store(lastReadIndex, std::memory_order_release);
+        }
     }
     else
     {
         // Not enough data - underrun situation
         buffer.clear();
-        sharedData->metrics.bufferUnderruns.fetch_add(1, std::memory_order_relaxed);
+        
+        // Only try to write to shared memory if we have permission
+        if (canWriteToSharedMemory && sharedData != nullptr)
+        {
+            sharedData->metrics.bufferUnderruns.fetch_add(1, std::memory_order_relaxed);
+        }
         
         // If we're seriously lagging, skip ahead to avoid major audio artifacts
         if (available < numSamples/2 && writeIndex > numSamples*2)
         {
             // Skip ahead to keep latency manageable, but stay behind writeIndex
             lastReadIndex = writeIndex - numSamples*2;
-            sharedData->readIndex.store(lastReadIndex, std::memory_order_release);
+            
+            // Only try to write to shared memory if we have permission
+            if (canWriteToSharedMemory && sharedData != nullptr)
+            {
+                sharedData->readIndex.store(lastReadIndex, std::memory_order_release);
+            }
         }
     }
 }

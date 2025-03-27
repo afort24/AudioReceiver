@@ -70,7 +70,9 @@ public:
 
 private:
     
-
+    // Flag to indicate if we can write to the shared memory
+    bool canWriteToSharedMemory = false;
+    
     uint64_t lastReadIndex = 0;
 
     // Timer for reconnection attempts
