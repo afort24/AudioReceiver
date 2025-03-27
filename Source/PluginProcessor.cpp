@@ -17,7 +17,8 @@ AudioReceiverAudioProcessor::AudioReceiverAudioProcessor()
 {
 
     //Try initial connection
-    initializeConnection();
+    //initializeConnection();
+    //^Cubase might instantiate the plugin before the audio thread is active. //Deferring shared memory setup until prepareToPlay():
     
     // Set up timer for reconnection if needed
     reconnectionTimer = std::make_unique<ReconnectionTimer>(*this);
@@ -83,6 +84,7 @@ bool AudioReceiverAudioProcessor::connectToSharedMemory()
     if (mappedMemory == MAP_FAILED)
     {
         DBG("Failed to map shared memory: " + juce::String(strerror(errno)));
+        sharedData = nullptr;
         close(shm_fd);
         shm_fd = -1;
         return false;
@@ -198,7 +200,11 @@ void AudioReceiverAudioProcessor::changeProgramName (int index, const juce::Stri
 //==============================================================================
 void AudioReceiverAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    juce::Logger::writeToLog("Receiver plugin ready to play");
+    DBG("Receiver plugin ready to play");
+    
+    //Cubase might instantiate the plugin before the audio thread is active. //Deferring shared memory setup until prepareToPlay():
+    if (!isMemoryInitialized)
+        initializeConnection();
 }
 
 void AudioReceiverAudioProcessor::releaseResources()
