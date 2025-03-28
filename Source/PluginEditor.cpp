@@ -14,8 +14,14 @@ AudioReceiverAudioProcessorEditor::AudioReceiverAudioProcessorEditor (AudioRecei
     statusLabel.setText("Connecting...", juce::dontSendNotification);
     statusLabel.setColour(juce::Label::textColourId, juce::Colours::white);
     
+    //Meter:
+    addAndMakeVisible(audioMeter);
+    audioMeter.setGainEnabled(true);  // Enable gain control
+    
     // Start the timer to update status
-    startTimer(500); // Update every 500ms
+//    startTimer(500); // Update every 500ms
+    
+    startTimerHz(24);
     
     setSize(400, 300);
 }
@@ -37,6 +43,16 @@ void AudioReceiverAudioProcessorEditor::timerCallback()
     {
         statusLabel.setText("Not Connected", juce::dontSendNotification);
         statusLabel.setColour(juce::Label::textColourId, juce::Colours::red);
+    }
+    
+    {
+        float level;
+        {
+            const juce::ScopedLock sl(audioProcessor.levelLock);
+            level = audioProcessor.currentLevel;
+        }
+
+        audioMeter.setLevel(level);
     }
 }
 
@@ -74,8 +90,14 @@ void AudioReceiverAudioProcessorEditor::paint (juce::Graphics& g)
 
 void AudioReceiverAudioProcessorEditor::resized()
 {
+    
+    
     // Position the status label in the upper part of the UI
     juce::Rectangle<int> area = getLocalBounds();
     area.removeFromTop(70); // Space for the title
     statusLabel.setBounds(area.removeFromTop(40).reduced(20, 0));
+    
+    //Meter:
+    // Place the audio meter on the left side
+    audioMeter.setBounds(area.removeFromRight(80));
 }

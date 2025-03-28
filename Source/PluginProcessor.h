@@ -67,6 +67,11 @@ public:
     
     //New:
     bool attemptReconnection();  // For subsequent reconnection attempts
+    
+    //Meter/gain stuff
+    float gain = 1.0f;           // Linear gain multiplier
+    float currentLevel = -60.0f; // Post-gain RMS level in dB
+    juce::CriticalSection levelLock;
 
 private:
     

@@ -302,6 +302,15 @@ void AudioReceiverAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         {
             sharedData->readIndex.store(lastReadIndex, std::memory_order_release);
         }
+
+        // =============================
+        // ✅ Apply gain and compute level (thread-safe)
+        // =============================
+        {
+            const juce::ScopedLock sl(levelLock); // lock access to gain and level
+            buffer.applyGain(gain); // gain is a float member variable set by the editor
+            currentLevel = AudioLevelUtils::calculateRMSLevel(buffer);
+        }
     }
     else
     {
