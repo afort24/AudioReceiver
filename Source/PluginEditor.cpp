@@ -25,8 +25,8 @@ void AudioReceiverAudioProcessorEditor::timerCallback()
 {
     if (audioProcessor.isConnectionActive())
     {
-        statusLabel.setText("Connected - Receiving Audio", juce::dontSendNotification);
-        statusLabel.setColour(juce::Label::textColourId, juce::Colours::green);
+        statusLabel.setText("Connected to AudioSender", juce::dontSendNotification);
+        statusLabel.setColour(juce::Label::textColourId, juce::Colours::lime);
     }
     else if (audioProcessor.isMemoryInitializedAndActive())
     {
@@ -48,19 +48,29 @@ AudioReceiverAudioProcessorEditor::~AudioReceiverAudioProcessorEditor()
 //==============================================================================
 void AudioReceiverAudioProcessorEditor::paint (juce::Graphics& g)
 {
-        // Background
-        g.fillAll(getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId));
-        
-        // Draw a title at the top
-        g.setColour(juce::Colours::white);
-        g.setFont(juce::Font(20.0f, juce::Font::bold));
-        g.drawFittedText("Audio Receiver", getLocalBounds().removeFromTop(50), juce::Justification::centred, 1);
-        
-        // Draw a border around the status label for visibility
-        juce::Rectangle<int> statusBounds = getLocalBounds().reduced(20).removeFromTop(40);
-        g.setColour(juce::Colours::darkgrey);
-        g.drawRoundedRectangle(statusBounds.toFloat(), 4.0f, 1.0f);
+    // Gradient background (same as TransportSender)
+    juce::ColourGradient backgroundGradient(
+        juce::Colour::fromRGB(30, 30, 30), // Dark grey top
+        0, 0,
+        juce::Colours::black,              // Black bottom
+        0, static_cast<float>(getHeight()),
+        false
+    );
+
+    backgroundGradient.addColour(0.8, juce::Colours::black);
+    g.setGradientFill(backgroundGradient);
+    g.fillRect(getLocalBounds());
+
+    // Title Text (without box)
+    g.setColour(juce::Colours::goldenrod);
+    g.setFont(juce::Font(20.0f, juce::Font::bold));
+
+    // Create a smaller rectangle and center the text inside it
+    juce::Rectangle<int> titleArea = juce::Rectangle<int>(0, 15, getWidth(), 30);
+    g.drawFittedText("Audio Receiver", titleArea, juce::Justification::centred, 1);
 }
+
+
 
 void AudioReceiverAudioProcessorEditor::resized()
 {

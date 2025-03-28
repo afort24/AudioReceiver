@@ -255,7 +255,6 @@ bool AudioReceiverAudioProcessor::isBusesLayoutSupported (const BusesLayout& lay
 }
 #endif
 
-
 //The key changes here are the addition of the if (canWriteToSharedMemory && sharedData != nullptr) checks before any attempt to write to the shared memory.
 void AudioReceiverAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
