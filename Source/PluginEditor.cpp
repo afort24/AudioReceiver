@@ -17,6 +17,8 @@ AudioReceiverAudioProcessorEditor::AudioReceiverAudioProcessorEditor (AudioRecei
     //Meter:
     addAndMakeVisible(audioMeter);
     audioMeter.setGainEnabled(true);  // Enable gain control
+    audioMeter.getSlider().addListener(this);
+
     
     // Start the timer to update status
 //    startTimer(500); // Update every 500ms
@@ -58,10 +60,21 @@ void AudioReceiverAudioProcessorEditor::timerCallback()
 
 AudioReceiverAudioProcessorEditor::~AudioReceiverAudioProcessorEditor()
 {
+    audioMeter.getSlider().removeListener(this);
     stopTimer();
 }
 
 //==============================================================================
+//Meter:
+void AudioReceiverAudioProcessorEditor::sliderValueChanged(juce::Slider* slider)
+{
+    if (slider == &audioMeter.getSlider())
+    {
+        // Pass slider value to processor (linear gain)
+        audioProcessor.gain = audioMeter.getGainLinear();
+    }
+}
+
 void AudioReceiverAudioProcessorEditor::paint (juce::Graphics& g)
 {
     // Gradient background (same as TransportSender)

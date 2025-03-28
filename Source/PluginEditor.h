@@ -9,7 +9,7 @@
 //==============================================================================
 /**
 */
-class AudioReceiverAudioProcessorEditor  : public juce::AudioProcessorEditor, private juce::Timer
+class AudioReceiverAudioProcessorEditor  : public juce::AudioProcessorEditor, private juce::Timer, private juce::Slider::Listener
 {
 public:
     AudioReceiverAudioProcessorEditor (AudioReceiverAudioProcessor&);
@@ -28,6 +28,7 @@ private:
     
     juce::Label statusLabel;
     
+    void sliderValueChanged(juce::Slider* slider) override;
     AudioMeterFader audioMeter;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AudioReceiverAudioProcessorEditor)
