@@ -97,6 +97,35 @@ void AudioReceiverAudioProcessorEditor::paint (juce::Graphics& g)
     // Create a smaller rectangle and center the text inside it
     juce::Rectangle<int> titleArea = juce::Rectangle<int>(0, 15, getWidth(), 30);
     g.drawFittedText("Audio Receiver", titleArea, juce::Justification::centred, 1);
+    
+    // UTF-8 Encoded String (First Part with Copyright Symbol)
+    const char* utf8Text1 = u8"Alex Fortunato Music ©";
+    juce::String footerText1 = juce::String::fromUTF8(utf8Text1, static_cast<int>(std::strlen(utf8Text1)));
+    
+    // Second part of string ("2025") separately
+    juce::String footerText2 = " 2025";
+    
+    // Website label
+    juce::String websiteText = "alexfortunatomusic.com";
+
+    // Combine full footer lines
+    juce::String footerLine1 = footerText1 + footerText2;
+    juce::String footerLine2 = websiteText;
+
+    // Set font and color
+    g.setFont(juce::Font(12.0f, juce::Font::plain));
+    g.setColour(juce::Colours::goldenrod);
+
+    // Define area near bottom for footer
+    auto bounds = getLocalBounds().reduced(10);
+    auto footerArea = bounds.removeFromBottom(30); // Adjust height if needed
+
+    // Split footer area for two lines
+    juce::Rectangle<int> line1 = footerArea.removeFromTop(15);
+    juce::Rectangle<int> line2 = footerArea;
+
+    g.drawFittedText(footerLine1, line1, juce::Justification::centred, 1);
+    g.drawFittedText(footerLine2, line2, juce::Justification::centred, 1);
 }
 
 
