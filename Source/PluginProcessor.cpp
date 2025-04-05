@@ -10,7 +10,12 @@ AudioReceiverAudioProcessor::AudioReceiverAudioProcessor()
                       #if ! JucePlugin_IsSynth
                        .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
                       #endif
-                       .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
+                       .withOutput ("1/2", juce::AudioChannelSet::stereo(), true)
+                       .withOutput("3/4", juce::AudioChannelSet::stereo(), true)
+                       .withOutput("1", juce::AudioChannelSet::mono(), true)
+                       .withOutput("2", juce::AudioChannelSet::mono(), true)
+                       .withOutput("3", juce::AudioChannelSet::mono(), true)
+                       .withOutput("4", juce::AudioChannelSet::mono(), true)
                      #endif
                        )
 #endif
@@ -232,111 +237,123 @@ void AudioReceiverAudioProcessor::releaseResources()
 #ifndef JucePlugin_PreferredChannelConfigurations
 bool AudioReceiverAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
-  #if JucePlugin_IsMidiEffect
-    juce::ignoreUnused (layouts);
+#if JucePlugin_IsMidiEffect
+    juce::ignoreUnused(layouts);
     return true;
-  #else
-    // This is the place where you check if the layout is supported.
-    // In this template code we only support mono or stereo.
-    // Some plugin hosts, such as certain GarageBand versions, will only
-    // load plugins that support stereo bus layouts.
-    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono()
-     && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
+#else
+    // Always require the main output bus to have exactly 8 channels.
+    if (layouts.getMainOutputChannelSet().size() != 8)
         return false;
 
-    // This checks if the input layout matches the output layout
-   #if ! JucePlugin_IsSynth
-    if (layouts.getMainOutputChannelSet() != layouts.getMainInputChannelSet())
-        return false;
-   #endif
-
     return true;
-  #endif
+#endif
 }
 #endif
 
+
 //The key changes here are the addition of the if (canWriteToSharedMemory && sharedData != nullptr) checks before any attempt to write to the shared memory.
-void AudioReceiverAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
+void AudioReceiverAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
-    
-    // Skip processing if shared memory isn't initialized or not active
+
+    // Skip processing if shared memory isn't initialized or not active.
     if (!isMemoryInitialized || sharedData == nullptr || !sharedData->isActive.load())
     {
         buffer.clear();
         return;
     }
-    
-    auto totalNumOutputChannels = getTotalNumOutputChannels();
-    auto numSamples = buffer.getNumSamples();
-    
-    // Get current read and write positions
+
+    int numSamples = buffer.getNumSamples();
+    // Get the number of output buses (should be 6 as per your configuration)
+    int numOutputBuses = getBusCount(false);
+
+    // Define a static mapping array for the output buses:
+    // Each entry: { starting shared channel offset, number of channels for that bus }
+    // Bus 0 ("1/2"): offset 0, 2 channels
+    // Bus 1 ("3/4"): offset 2, 2 channels
+    // Bus 2 ("1"):   offset 4, 1 channel
+    // Bus 3 ("2"):   offset 5, 1 channel
+    // Bus 4 ("3"):   offset 6, 1 channel
+    // Bus 5 ("4"):   offset 7, 1 channel
+    static const int busMapping[6][2] = {
+        {0, 2},
+        {2, 2},
+        {4, 1},
+        {5, 1},
+        {6, 1},
+        {7, 1}
+    };
+
+    // Total channels in shared memory is 8.
+    const int totalSharedChannels = 8;
+
+    // Get current shared memory indices.
     uint64_t writeIndex = sharedData->writeIndex.load(std::memory_order_acquire);
-    uint64_t readIndex = lastReadIndex;
-    
-    // Calculate how many frames are available to read
-    uint64_t available = writeIndex - readIndex;
-    
-    if (available >= numSamples)
+    uint64_t readIndex  = lastReadIndex;
+    uint64_t available  = writeIndex - readIndex;
+
+    // Check if we have enough frames available.
+    if (available < (uint64_t) numSamples)
     {
-        // Read audio data from ring buffer
-        int numChannels = std::min(totalNumOutputChannels,
-                                   sharedData->numChannels.load(std::memory_order_acquire));
-        
+        // Not enough data: clear each output bus.
+        for (int bus = 0; bus < numOutputBuses; ++bus)
+            getBusBuffer(buffer, false, bus).clear();
+
+        if (canWriteToSharedMemory && sharedData != nullptr)
+            sharedData->metrics.bufferUnderruns.fetch_add(1, std::memory_order_relaxed);
+
+        // If severely lagging, adjust the read pointer.
+        if (available < (uint64_t) numSamples / 2 && writeIndex > (uint64_t) numSamples * 2)
+        {
+            lastReadIndex = writeIndex - numSamples * 2;
+            if (canWriteToSharedMemory && sharedData != nullptr)
+                sharedData->readIndex.store(lastReadIndex, std::memory_order_release);
+        }
+        return;
+    }
+
+    // For each output bus, copy the corresponding shared memory data.
+    for (int bus = 0; bus < numOutputBuses; ++bus)
+    {
+        auto&& outBusBuffer = getBusBuffer(buffer, false, bus);
+        outBusBuffer.clear();  // Clear the bus buffer.
+
+        int sharedOffset  = busMapping[bus][0];   // Starting shared channel.
+        int channelsToCopy = busMapping[bus][1];    // Number of channels for this bus.
+
         for (int sample = 0; sample < numSamples; ++sample)
         {
             uint64_t frameIndex = (readIndex + sample) & SharedAudioData::BUFFER_MASK;
-            
-            for (int channel = 0; channel < numChannels; ++channel)
+            for (int ch = 0; ch < channelsToCopy; ++ch)
             {
-                int bufferIndex = (frameIndex * numChannels) + channel;
-                buffer.setSample(channel, sample, sharedData->audioData[bufferIndex]);
+                int overallSharedChannel = sharedOffset + ch;
+                int sharedBufferIndex = (frameIndex * totalSharedChannels) + overallSharedChannel;
+                float sampleValue = sharedData->audioData[sharedBufferIndex];
+                outBusBuffer.setSample(ch, sample, sampleValue);
             }
-        }
-        
-        // Update local read position
-        lastReadIndex = readIndex + numSamples;
-        
-        // Only try to write to shared memory if we have permission
-        if (canWriteToSharedMemory && sharedData != nullptr)
-        {
-            sharedData->readIndex.store(lastReadIndex, std::memory_order_release);
-        }
-
-        // =============================
-        // ✅ Apply gain and compute level (thread-safe)
-        // =============================
-        {
-            const juce::ScopedLock sl(levelLock); // lock access to gain and level
-            buffer.applyGain(gain); // gain is a float member variable set by the editor
-            currentLevel = AudioLevelUtils::calculateRMSLevel(buffer);
         }
     }
-    else
+
+    // Update the local read position.
+    lastReadIndex = readIndex + numSamples;
+    if (canWriteToSharedMemory && sharedData != nullptr)
+        sharedData->readIndex.store(lastReadIndex, std::memory_order_release);
+
+    // Apply gain to each output bus and compute RMS level.
     {
-        // Not enough data - underrun situation
-        buffer.clear();
-        
-        // Only try to write to shared memory if we have permission
-        if (canWriteToSharedMemory && sharedData != nullptr)
+        const juce::ScopedLock sl(levelLock);
+        for (int bus = 0; bus < numOutputBuses; ++bus)
         {
-            sharedData->metrics.bufferUnderruns.fetch_add(1, std::memory_order_relaxed);
+            auto&& outBusBuffer = getBusBuffer(buffer, false, bus);
+            // Removed redundant clear() here so we retain the copied data.
+            outBusBuffer.applyGain(0, outBusBuffer.getNumSamples(), gain);
         }
-        
-        // If we're seriously lagging, skip ahead to avoid major audio artifacts
-        if (available < numSamples/2 && writeIndex > numSamples*2)
-        {
-            // Skip ahead to keep latency manageable, but stay behind writeIndex
-            lastReadIndex = writeIndex - numSamples*2;
-            
-            // Only try to write to shared memory if we have permission
-            if (canWriteToSharedMemory && sharedData != nullptr)
-            {
-                sharedData->readIndex.store(lastReadIndex, std::memory_order_release);
-            }
-        }
+        // Compute overall RMS level (this could be adapted to merge channels if needed).
+        currentLevel = AudioLevelUtils::calculateRMSLevel(buffer);
     }
 }
+
+
 
 //==============================================================================
 bool AudioReceiverAudioProcessor::hasEditor() const
