@@ -3,5 +3,4 @@ JuceLibraryCode/*
 *.DS_Store
 libs/
 cmake-build-debug/
-cmake/
 AudioReceiver.jucer
