@@ -96,7 +96,7 @@ void AudioReceiverAudioProcessorEditor::paint (juce::Graphics& g)
 
     // Create a smaller rectangle and center the text inside it
     juce::Rectangle<int> titleArea = juce::Rectangle<int>(0, 15, getWidth(), 30);
-    g.drawFittedText("Audio Receiver", titleArea, juce::Justification::centred, 1);
+    g.drawFittedText("Audio ReceiverX", titleArea, juce::Justification::centred, 1);
     
     // UTF-8 Encoded String (First Part with Copyright Symbol)
     const char* utf8Text1 = u8"Alex Fortunato Music ©";
